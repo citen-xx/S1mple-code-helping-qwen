@@ -17,8 +17,8 @@ export default {
         soft: '0 18px 50px rgba(0, 0, 0, 0.25)'
       },
       fontFamily: {
-        display: ['"Space Grotesk"', 'sans-serif'],
-        mono: ['"JetBrains Mono"', 'monospace']
+        display: ['"Segoe UI"', '"PingFang SC"', '"Microsoft YaHei"', 'sans-serif'],
+        mono: ['"Cascadia Code"', 'Consolas', '"JetBrains Mono"', 'monospace']
       },
       backgroundImage: {
         grid: 'linear-gradient(rgba(85, 200, 255, 0.08) 1px, transparent 1px), linear-gradient(90deg, rgba(85, 200, 255, 0.08) 1px, transparent 1px)'
