@@ -1,0 +1,17 @@
+server:
+  port: ${SERVER_PORT:8080}
+
+spring:
+  mvc:
+    async:
+      request-timeout: 600000
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:mysql://localhost:3306/simple_ai_oj?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai}
+    username: ${SPRING_DATASOURCE_USERNAME:root}
+    password: ${SPRING_DATASOURCE_PASSWORD:123456}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+dashscope:
+  api-key: sk-93d2acfc2c0943aba471418e24a64649
+  model: ${DASHSCOPE_MODEL:qwen-plus}
+  endpoint: ${DASHSCOPE_ENDPOINT:https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions}

@@ -1,0 +1,8 @@
+.git
+.idea
+.vscode
+target
+.m2
+frontend
+node_modules
+npm-debug.log
