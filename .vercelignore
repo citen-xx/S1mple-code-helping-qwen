@@ -1,0 +1,12 @@
+.git
+.idea
+.m2
+target
+node_modules
+frontend/node_modules
+frontend/vite-dev.log
+src
+sql
+Dockerfile
+docker-compose.yml
+DEPLOY.md
