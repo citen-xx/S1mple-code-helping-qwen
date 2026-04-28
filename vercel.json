@@ -1,9 +1,9 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "vite",
-  "installCommand": "cd frontend && npm install",
-  "buildCommand": "cd frontend && npm run build",
-  "outputDirectory": "frontend/dist",
+  "installCommand": "if [ -f frontend/package.json ]; then cd frontend && npm install; else npm install; fi",
+  "buildCommand": "if [ -f frontend/package.json ]; then cd frontend && npm run build && cd .. && rm -rf dist && mkdir -p dist && cp -r frontend/dist/. dist/; else npm run build; fi",
+  "outputDirectory": "dist",
   "rewrites": [
     {
       "source": "/(.*)",
