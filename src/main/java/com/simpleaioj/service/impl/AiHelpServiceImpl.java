@@ -75,7 +75,7 @@ public class AiHelpServiceImpl implements AiHelpService {
             @Override
             public void onNext(String token) {
                 try {
-                    // 当前先按“纯文本 token”直接推送给前端。
+                    // 当前先按纯文本 token 直接推送给前端。
                     // 如果前端需要 JSON 格式，可改成 emitter.send(Map.of("content", token))。
                     emitter.send(token);
                 } catch (IOException e) {

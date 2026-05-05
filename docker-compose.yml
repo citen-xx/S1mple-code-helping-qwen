@@ -37,9 +37,10 @@ services:
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/${MYSQL_DATABASE:-simple_ai_oj}?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai
       SPRING_DATASOURCE_USERNAME: root
       SPRING_DATASOURCE_PASSWORD: ${MYSQL_ROOT_PASSWORD:-123456}
-      DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
+      DASHSCOPE_API_KEY: sk-93d2acfc2c0943aba471418e24a64649
       DASHSCOPE_MODEL: ${DASHSCOPE_MODEL:-qwen-plus}
-      DASHSCOPE_ENDPOINT: ${DASHSCOPE_ENDPOINT:-https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions}
+      DASHSCOPE_ENABLE_SEARCH: ${DASHSCOPE_ENABLE_SEARCH:-true}
+      DASHSCOPE_BASE_URL: ${DASHSCOPE_BASE_URL:-}
     ports:
       - "8080:8080"
 
