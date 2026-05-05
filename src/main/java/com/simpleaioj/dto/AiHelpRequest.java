@@ -18,6 +18,7 @@ public class AiHelpRequest {
         return wrongCode;
     }
 
+
     public void setWrongCode(String wrongCode) {
         this.wrongCode = wrongCode;
     }
