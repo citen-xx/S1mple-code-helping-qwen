@@ -1,45 +1,54 @@
 package com.simpleaioj.service.impl;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.simpleaioj.config.DashScopeProperties;
 import com.simpleaioj.dto.AiHelpRequest;
 import com.simpleaioj.service.AiHelpService;
-import okhttp3.Call;
-import okhttp3.Callback;
-import okhttp3.MediaType;
-import okhttp3.OkHttpClient;
-import okhttp3.Request;
-import okhttp3.RequestBody;
-import okhttp3.Response;
-import okhttp3.ResponseBody;
+import dev.langchain4j.data.message.AiMessage;
+import dev.langchain4j.data.message.ChatMessage;
+import dev.langchain4j.data.message.SystemMessage;
+import dev.langchain4j.data.message.UserMessage;
+import dev.langchain4j.model.StreamingResponseHandler;
+import dev.langchain4j.model.dashscope.QwenStreamingChatModel;
+import dev.langchain4j.model.output.Response;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
-import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStreamReader;
-import java.nio.charset.StandardCharsets;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 
 @Service
 public class AiHelpServiceImpl implements AiHelpService {
 
-    private static final MediaType JSON_MEDIA_TYPE = MediaType.get("application/json; charset=utf-8");
-    private static final long SSE_TIMEOUT_MS = 0L;
-    private static final String SYSTEM_PROMPT = "你是一个算法教练，请看这道题和用户的代码，指出哪里写错了，给出思路，不要直接给完整代码。请使用中文回答。";
+    private static final long SSE_TIMEOUT_MS = 60000L;
+    private static final String SYSTEM_PROMPT = """
+            你是一个算法教练，请看这道题和用户的代码，指出哪里写错了，给出思路，不要直接给完整代码。
+            你的回答必须使用中文。
+            如果联网搜索能帮助判断最新资料、库版本、报错背景或相关知识点，请主动使用联网搜索能力。
+            回答时优先指出：
+            1. 题意理解是否正确
+            2. 代码错误位置
+            3. 修改思路
+            4. 调试建议
+            """;
 
-    private final OkHttpClient okHttpClient;
-    private final ObjectMapper objectMapper;
-    private final DashScopeProperties dashScopeProperties;
+    private final QwenStreamingChatModel streamingModel;
 
-    public AiHelpServiceImpl(OkHttpClient okHttpClient, ObjectMapper objectMapper, DashScopeProperties dashScopeProperties) {
-        this.okHttpClient = okHttpClient;
-        this.objectMapper = objectMapper;
-        this.dashScopeProperties = dashScopeProperties;
+    public AiHelpServiceImpl(
+            @Value("${dashscope.api-key}") String apiKey,
+            @Value("${dashscope.model:qwen-plus}") String modelName,
+            @Value("${dashscope.enable-search:true}") boolean enableSearch,
+            @Value("${dashscope.base-url:}") String baseUrl) {
+        QwenStreamingChatModel.QwenStreamingChatModelBuilder builder = QwenStreamingChatModel.builder()
+                .apiKey(apiKey)
+                .modelName(modelName)
+                .enableSearch(enableSearch);
+
+        if (StringUtils.hasText(baseUrl)) {
+            builder.baseUrl(baseUrl);
+        }
+
+        this.streamingModel = builder.build();
     }
 
     @Override
@@ -47,84 +56,48 @@ public class AiHelpServiceImpl implements AiHelpService {
         SseEmitter emitter = new SseEmitter(SSE_TIMEOUT_MS);
 
         if (!isValidRequest(request)) {
-            sendAndComplete(emitter, "error", "questionContent、wrongCode、errorOutput 不能为空");
-            return emitter;
-        }
-        if (!StringUtils.hasText(dashScopeProperties.getApiKey())) {
-            sendAndComplete(emitter, "error", "dashscope.api-key 未配置");
+            emitter.completeWithError(new IllegalArgumentException("questionContent、wrongCode、errorOutput 不能为空"));
             return emitter;
         }
 
-        try {
-            Request httpRequest = buildRequest(request);
-            Call call = okHttpClient.newCall(httpRequest);
+        // 当前项目的请求字段实际是 questionContent / wrongCode / errorOutput。
+        // 如果你的 DTO 后续改成 request.getQuestion() 之类的单字段结构，只需要替换这里的 prompt 拼接逻辑即可。
+        String userPrompt = buildPrompt(request);
 
-            emitter.onCompletion(call::cancel);
-            emitter.onTimeout(() -> {
-                call.cancel();
-                trySend(emitter, "error", "SSE timeout");
+        List<ChatMessage> messages = List.of(
+                SystemMessage.from(SYSTEM_PROMPT),
+                UserMessage.from(userPrompt)
+        );
+
+        emitter.onTimeout(emitter::complete);
+
+        streamingModel.generate(messages, new StreamingResponseHandler<AiMessage>() {
+            @Override
+            public void onNext(String token) {
+                try {
+                    // 当前先按“纯文本 token”直接推送给前端。
+                    // 如果前端需要 JSON 格式，可改成 emitter.send(Map.of("content", token))。
+                    emitter.send(token);
+                } catch (IOException e) {
+                    emitter.completeWithError(e);
+                }
+            }
+
+            @Override
+            public void onComplete(Response<AiMessage> response) {
                 emitter.complete();
-            });
+            }
 
-            call.enqueue(new Callback() {
-                @Override
-                public void onFailure(Call call, IOException e) {
-                    sendAndComplete(emitter, "error", "调用 DashScope 失败: " + e.getMessage());
-                }
-
-                @Override
-                public void onResponse(Call call, Response response) throws IOException {
-                    try (response; ResponseBody body = response.body()) {
-                        if (!response.isSuccessful()) {
-                            String errorBody = body == null ? "" : body.string();
-                            sendAndComplete(emitter, "error", "DashScope HTTP " + response.code() + ": " + errorBody);
-                            return;
-                        }
-                        if (body == null) {
-                            sendAndComplete(emitter, "error", "DashScope response body is empty");
-                            return;
-                        }
-
-                        forwardStream(body, emitter);
-                    } catch (Exception e) {
-                        sendAndComplete(emitter, "error", "解析流式响应失败: " + e.getMessage());
-                    }
-                }
-            });
-        } catch (Exception e) {
-            sendAndComplete(emitter, "error", "构造请求失败: " + e.getMessage());
-        }
+            @Override
+            public void onError(Throwable error) {
+                emitter.completeWithError(error);
+            }
+        });
 
         return emitter;
     }
 
-    private Request buildRequest(AiHelpRequest request) throws IOException {
-        Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("model", dashScopeProperties.getModel());
-        payload.put("stream", true);
-        payload.put("messages", List.of(
-                buildMessage("system", SYSTEM_PROMPT),
-                buildMessage("user", buildUserPrompt(request))
-        ));
-
-        String json = objectMapper.writeValueAsString(payload);
-        return new Request.Builder()
-                .url(dashScopeProperties.getEndpoint())
-                .addHeader("Authorization", "Bearer " + dashScopeProperties.getApiKey())
-                .addHeader("Content-Type", "application/json")
-                .addHeader("Accept", "text/event-stream")
-                .post(RequestBody.create(json, JSON_MEDIA_TYPE))
-                .build();
-    }
-
-    private Map<String, String> buildMessage(String role, String content) {
-        Map<String, String> message = new LinkedHashMap<>();
-        message.put("role", role);
-        message.put("content", content);
-        return message;
-    }
-
-    private String buildUserPrompt(AiHelpRequest request) {
+    private String buildPrompt(AiHelpRequest request) {
         return """
                 题目内容：
                 %s
@@ -132,7 +105,7 @@ public class AiHelpServiceImpl implements AiHelpService {
                 用户写错的代码：
                 %s
 
-                报错信息/错误输出：
+                报错信息 / 错误输出：
                 %s
                 """.formatted(
                 request.getQuestionContent(),
@@ -141,68 +114,10 @@ public class AiHelpServiceImpl implements AiHelpService {
         );
     }
 
-    private void forwardStream(ResponseBody body, SseEmitter emitter) throws IOException {
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(body.byteStream(), StandardCharsets.UTF_8))) {
-            String line;
-            while ((line = reader.readLine()) != null) {
-                if (!line.startsWith("data:")) {
-                    continue;
-                }
-
-                String data = line.substring(5).trim();
-                if (data.isEmpty()) {
-                    continue;
-                }
-                if ("[DONE]".equals(data)) {
-                    trySend(emitter, "done", "[DONE]");
-                    emitter.complete();
-                    return;
-                }
-
-                String content = extractContent(data);
-                if (StringUtils.hasText(content)) {
-                    // 按块透传模型增量文本，前端可直接用于打字机效果。
-                    trySend(emitter, "message", content);
-                }
-            }
-        }
-
-        emitter.complete();
-    }
-
-    private String extractContent(String data) throws IOException {
-        JsonNode root = objectMapper.readTree(data);
-
-        JsonNode choices = root.path("choices");
-        if (choices.isArray() && !choices.isEmpty()) {
-            return choices.get(0).path("delta").path("content").asText("");
-        }
-
-        JsonNode outputChoices = root.path("output").path("choices");
-        if (outputChoices.isArray() && !outputChoices.isEmpty()) {
-            return outputChoices.get(0).path("message").path("content").asText("");
-        }
-
-        return "";
-    }
-
     private boolean isValidRequest(AiHelpRequest request) {
         return request != null
                 && StringUtils.hasText(request.getQuestionContent())
                 && StringUtils.hasText(request.getWrongCode())
                 && StringUtils.hasText(request.getErrorOutput());
-    }
-
-    private void sendAndComplete(SseEmitter emitter, String eventName, String data) {
-        trySend(emitter, eventName, data);
-        emitter.complete();
-    }
-
-    private void trySend(SseEmitter emitter, String eventName, String data) {
-        try {
-            emitter.send(SseEmitter.event().name(eventName).data(data));
-        } catch (IOException ignored) {
-            emitter.completeWithError(ignored);
-        }
     }
 }

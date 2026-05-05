@@ -14,4 +14,5 @@ spring:
 dashscope:
   api-key: ${DASHSCOPE_API_KEY:}
   model: ${DASHSCOPE_MODEL:qwen-plus}
-  endpoint: ${DASHSCOPE_ENDPOINT:https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions}
+  enable-search: ${DASHSCOPE_ENABLE_SEARCH:true}
+  base-url: ${DASHSCOPE_BASE_URL:}

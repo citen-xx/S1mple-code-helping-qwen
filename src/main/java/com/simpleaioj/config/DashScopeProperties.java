@@ -9,7 +9,9 @@ public class DashScopeProperties {
 
     private String apiKey;
     private String model = "qwen-plus";
-    private String endpoint = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions";
+    private Boolean enableSearch = true;
+    private String baseUrl;
+    private String endpoint;
 
     public String getApiKey() {
         return apiKey;
@@ -25,6 +27,22 @@ public class DashScopeProperties {
 
     public void setModel(String model) {
         this.model = model;
+    }
+
+    public Boolean getEnableSearch() {
+        return enableSearch;
+    }
+
+    public void setEnableSearch(Boolean enableSearch) {
+        this.enableSearch = enableSearch;
+    }
+
+    public String getBaseUrl() {
+        return baseUrl;
+    }
+
+    public void setBaseUrl(String baseUrl) {
+        this.baseUrl = baseUrl;
     }
 
     public String getEndpoint() {
