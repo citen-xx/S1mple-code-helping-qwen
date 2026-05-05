@@ -122,7 +122,7 @@ function scrollConsoleToBottom() {
 function resetQuestionDetail() {
   questionDetail.question = {
     id: null,
-    title: '暂无题目.',
+    title: '暂无题目..',
     content: '',
     difficulty: '',
     timeLimit: 1000,
