@@ -3,7 +3,7 @@ package com.simpleaioj.dto;
 public class AiHelpRequest {
 
     private String questionContent;
-    private String wrongCode;
+    private String  wrongCode;
     private String errorOutput;
 
     public String getQuestionContent() {
