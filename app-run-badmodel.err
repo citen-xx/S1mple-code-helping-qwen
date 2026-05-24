@@ -1,0 +1,8 @@
+not-a-real-model : 无法将“not-a-real-model”项识别为 cmdlet、函数、脚本文件或可运行程序的名称。请检查名称的拼写，如果
+包括路径，请确保路径正确，然后再试一次。
+所在位置 行:1 字符: 45
++ $env:SERVER_PORT=8084; $env:DASHSCOPE_MODEL=not-a-real-model; mvn spr ...
++                                             ~~~~~~~~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (not-a-real-model:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+ 
