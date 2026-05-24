@@ -1,0 +1,73 @@
+[INFO] Scanning for projects...
+[INFO] 
+[INFO] --------------------< com.simpleaioj:simple-ai-oj >---------------------
+[INFO] Building simple-ai-oj 0.0.1-SNAPSHOT
+[INFO]   from pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] >>> spring-boot:3.3.5:run (default-cli) > test-compile @ simple-ai-oj >>>
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ simple-ai-oj ---
+[INFO] Copying 2 resources from src\main\resources to target\classes
+[INFO] Copying 92 resources from frontend\dist to target\classes\static
+[INFO] 
+[INFO] --- compiler:3.13.0:compile (default-compile) @ simple-ai-oj ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ simple-ai-oj ---
+[INFO] skip non existing resourceDirectory D:\code4\S1mple-Ai-Oj\src\test\resources
+[INFO] 
+[INFO] --- compiler:3.13.0:testCompile (default-testCompile) @ simple-ai-oj ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] <<< spring-boot:3.3.5:run (default-cli) < test-compile @ simple-ai-oj <<<
+[INFO] 
+[INFO] 
+[INFO] --- spring-boot:3.3.5:run (default-cli) @ simple-ai-oj ---
+[INFO] Attaching agents: []
+SLF4J(W): Class path contains multiple SLF4J providers.
+SLF4J(W): Found provider [ch.qos.logback.classic.spi.LogbackServiceProvider@244038d0]
+SLF4J(W): Found provider [org.slf4j.simple.SimpleServiceProvider@5680a178]
+SLF4J(W): See https://www.slf4j.org/codes.html#multiple_bindings for an explanation.
+SLF4J(I): Actual provider is of type [ch.qos.logback.classic.spi.LogbackServiceProvider@244038d0]
+
+  .   ____          _            __ _ _
+ /\\ / ___'_ __ _ _(_)_ __  __ _ \ \ \ \
+( ( )\___ | '_ | '_| | '_ \/ _` | \ \ \ \
+ \\/  ___)| |_)| | | | | || (_| |  ) ) ) )
+  '  |____| .__|_| |_|_| |_\__, | / / / /
+ =========|_|==============|___/=/_/_/_/
+
+ :: Spring Boot ::                (v3.3.5)
+
+2026-05-24T11:17:14.665+08:00  INFO 20324 --- [           main] com.simpleaioj.SimpleAiOjApplication     : Starting SimpleAiOjApplication using Java 21.0.8 with PID 20324 (D:\code4\S1mple-Ai-Oj\target\classes started by 17733 in D:\code4\S1mple-Ai-Oj)
+2026-05-24T11:17:14.667+08:00  INFO 20324 --- [           main] com.simpleaioj.SimpleAiOjApplication     : No active profile set, falling back to 1 default profile: "default"
+2026-05-24T11:17:15.437+08:00  INFO 20324 --- [           main] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat initialized with port 8083 (http)
+2026-05-24T11:17:15.448+08:00  INFO 20324 --- [           main] o.apache.catalina.core.StandardService   : Starting service [Tomcat]
+2026-05-24T11:17:15.449+08:00  INFO 20324 --- [           main] o.apache.catalina.core.StandardEngine    : Starting Servlet engine: [Apache Tomcat/10.1.31]
+2026-05-24T11:17:15.495+08:00  INFO 20324 --- [           main] o.a.c.c.C.[Tomcat].[localhost].[/]       : Initializing Spring embedded WebApplicationContext
+2026-05-24T11:17:15.498+08:00  INFO 20324 --- [           main] w.s.c.ServletWebServerApplicationContext : Root WebApplicationContext: initialization completed in 788 ms
+ _ _   |_  _ _|_. ___ _ |    _ 
+| | |\/|_)(_| | |_\  |_)||_|_\ 
+     /               |         
+                        3.5.7 
+2026-05-24T11:17:15.917+08:00  INFO 20324 --- [           main] o.s.b.a.w.s.WelcomePageHandlerMapping    : Adding welcome page: class path resource [static/index.html]
+2026-05-24T11:17:16.117+08:00  INFO 20324 --- [           main] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat started on port 8083 (http) with context path '/'
+2026-05-24T11:17:16.125+08:00  INFO 20324 --- [           main] com.simpleaioj.SimpleAiOjApplication     : Started SimpleAiOjApplication in 1.756 seconds (process running for 1.992)
+2026-05-24T11:17:26.998+08:00  INFO 20324 --- [nio-8083-exec-1] o.a.c.c.C.[Tomcat].[localhost].[/]       : Initializing Spring DispatcherServlet 'dispatcherServlet'
+2026-05-24T11:17:27.000+08:00  INFO 20324 --- [nio-8083-exec-1] o.s.web.servlet.DispatcherServlet        : Initializing Servlet 'dispatcherServlet'
+2026-05-24T11:17:27.001+08:00  INFO 20324 --- [nio-8083-exec-1] o.s.web.servlet.DispatcherServlet        : Completed initialization in 1 ms
+2026-05-24T11:17:27.073+08:00  INFO 20324 --- [nio-8083-exec-1] c.s.service.impl.AiHelpServiceImpl       : AI help prompt built, finalChars=450
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD FAILURE
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  02:50 min
+[INFO] Finished at: 2026-05-24T11:20:03+08:00
+[INFO] ------------------------------------------------------------------------
+[ERROR] Failed to execute goal org.springframework.boot:spring-boot-maven-plugin:3.3.5:run (default-cli) on project simple-ai-oj: Process terminated with exit code: -1 -> [Help 1]
+[ERROR] 
+[ERROR] To see the full stack trace of the errors, re-run Maven with the -e switch.
+[ERROR] Re-run Maven using the -X switch to enable full debug logging.
+[ERROR] 
+[ERROR] For more information about the errors and possible solutions, please read the following articles:
+[ERROR] [Help 1] http://cwiki.apache.org/confluence/display/MAVEN/MojoExecutionException

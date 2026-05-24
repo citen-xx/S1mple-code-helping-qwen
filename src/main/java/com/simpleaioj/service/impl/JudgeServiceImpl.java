@@ -88,22 +88,29 @@ public class JudgeServiceImpl implements JudgeService {
             TestCase testCase = testCases.get(i);
             ProcessResult runResult = executeCommand(sourceConfig.getRunCommand(), workDir, testCase.getInput(), timeLimitMs, false);
             lastOutput = runResult.getStdout();
+            int failedCaseIndex = i + 1;
+            String failedInput = testCase.getInput();
 
             if (runResult.isTimedOut()) {
-                return buildResponse(JudgeStatus.TIME_LIMIT_EXCEEDED, lastOutput, "Test case " + (i + 1) + " timed out");
+                return buildResponse(JudgeStatus.TIME_LIMIT_EXCEEDED, lastOutput,
+                        "Test case " + failedCaseIndex + " timed out",
+                        failedInput, null, normalizeOutput(runResult.getStdout()), failedCaseIndex);
             }
             if (runResult.getExitCode() != 0) {
                 String message = normalizeOutput(runResult.getStderr());
                 if (message.isEmpty()) {
                     message = "Program exited abnormally";
                 }
-                return buildResponse(JudgeStatus.RUNTIME_ERROR, lastOutput, message);
+                return buildResponse(JudgeStatus.RUNTIME_ERROR, lastOutput, message,
+                        failedInput, null, normalizeOutput(runResult.getStdout()), failedCaseIndex);
             }
 
             String actualOutput = normalizeOutput(runResult.getStdout());
             String expectedOutput = normalizeOutput(testCase.getExpectedOutput());
             if (!expectedOutput.equals(actualOutput)) {
-                return buildResponse(JudgeStatus.WRONG_ANSWER, runResult.getStdout(), "Wrong answer on test case " + (i + 1));
+                return buildResponse(JudgeStatus.WRONG_ANSWER, runResult.getStdout(),
+                        "Wrong answer on test case " + failedCaseIndex,
+                        failedInput, expectedOutput, actualOutput, failedCaseIndex);
             }
         }
 
@@ -205,10 +212,20 @@ public class JudgeServiceImpl implements JudgeService {
     }
 
     private JudgeResponse buildResponse(JudgeStatus status, String output, String message) {
+        return buildResponse(status, output, message, null, null, null, null);
+    }
+
+    private JudgeResponse buildResponse(JudgeStatus status, String output, String message,
+                                        String failedInput, String expectedOutput,
+                                        String actualOutput, Integer failedCaseIndex) {
         JudgeResponse response = new JudgeResponse();
         response.setStatus(status.getValue());
         response.setOutput(output == null ? "" : output);
         response.setMessage(message);
+        response.setFailedInput(failedInput);
+        response.setExpectedOutput(expectedOutput);
+        response.setActualOutput(actualOutput);
+        response.setFailedCaseIndex(failedCaseIndex);
         return response;
     }
 
