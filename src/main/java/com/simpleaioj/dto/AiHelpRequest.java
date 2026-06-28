@@ -5,7 +5,7 @@ public class AiHelpRequest {
     private String questionTitle;
     private String questionContent;
     private String language;
-    private String wrongCode;
+      private String wrongCode;
     private String judgeStatus;
     private String judgeMessage;
     private String actualOutput;
