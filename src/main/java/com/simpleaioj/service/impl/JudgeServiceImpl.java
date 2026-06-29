@@ -34,6 +34,8 @@ public class JudgeServiceImpl implements JudgeService {
 
     private static final long DEFAULT_TIME_LIMIT_MS = 1000L;
     private static final long COMPILE_TIMEOUT_MS = 10000L;
+    private static final long CPP_MEMORY_LIMIT_KB = 262144L;
+    private static final int CPP_MAX_PROCESSES = 15;
     private static final String LANGUAGE_JAVA = "java";
     private static final String LANGUAGE_CPP = "cpp";
 
@@ -68,9 +70,10 @@ public class JudgeServiceImpl implements JudgeService {
                 workDir = Files.createTempDirectory("simple-ai-oj-judge-");
 
                 Question question = detailVO.getQuestion();
+                long timeLimitMs = resolveTimeLimit(question);
                 int memoryLimitMb = (question != null && question.getMemoryLimit() != null && question.getMemoryLimit() > 0)
                         ? question.getMemoryLimit() : 128;
-                SourceConfig sourceConfig = buildSourceConfig(language, workDir, memoryLimitMb);
+                SourceConfig sourceConfig = buildSourceConfig(language, workDir, memoryLimitMb, timeLimitMs);
                 Files.writeString(sourceConfig.getSourcePath(), request.getCode(), StandardCharsets.UTF_8);
 
                 ProcessResult compileResult = executeCommand(sourceConfig.getCompileCommand(), workDir, null, COMPILE_TIMEOUT_MS, true);
@@ -147,27 +150,41 @@ public class JudgeServiceImpl implements JudgeService {
         throw new IllegalArgumentException("Only java and cpp are supported");
     }
 
-    private SourceConfig buildSourceConfig(String language, Path workDir, int memoryLimitMb) {
+    private SourceConfig buildSourceConfig(String language, Path workDir, int memoryLimitMb, long timeLimitMs) {
+        int timeLimitSeconds = (int) Math.ceil(timeLimitMs / 1000.0);
         if (LANGUAGE_JAVA.equals(language)) {
             Path sourcePath = workDir.resolve("Main.java");
+            List<String> runCommand = isWindows()
+                    ? List.of("java", "-Dfile.encoding=UTF-8", "-Xmx" + memoryLimitMb + "m", "-cp", ".", "Main")
+                    : List.of("bash", "-c",
+                    String.format(
+                            "ulimit -t %d -f 0 -u %d -n 16 && timeout %d java -Dfile.encoding=UTF-8 -Xmx%dm -cp . Main",
+                            timeLimitSeconds + 2, CPP_MAX_PROCESSES, timeLimitSeconds, memoryLimitMb
+                    ));
             return new SourceConfig(
                     sourcePath,
                     List.of("javac", "-encoding", "UTF-8", "Main.java"),
-                    List.of("java", "-Dfile.encoding=UTF-8", "-Xmx" + memoryLimitMb + "m", "-cp", ".", "Main")
+                    runCommand
             );
         }
 
-        // C++ 进程内存限制：跨平台方案较复杂。
-        // Linux 下可用 bash -c 'ulimit -v ... && ./main' 包装运行命令；
-        // Windows 下需借助 Job Objects API。
-        // 当前版本暂不落地 C++ 侧内存限制，仅 Java 侧通过 -Xmx 生效。
         String binaryName = isWindows() ? "main.exe" : "main";
         Path sourcePath = workDir.resolve("main.cpp");
         String runCommand = isWindows() ? binaryName : "./" + binaryName;
         return new SourceConfig(
                 sourcePath,
                 List.of("g++", "-std=c++17", "-O2", "main.cpp", "-o", binaryName),
-                List.of(runCommand)
+                isWindows()
+                        ? List.of(runCommand)
+                        : List.of("bash", "-c",
+                        String.format(
+                                "ulimit -v %d -t %d -f 0 -u %d -n 16 && timeout %d ./%s",
+                                CPP_MEMORY_LIMIT_KB,
+                                timeLimitSeconds + 2,
+                                CPP_MAX_PROCESSES,
+                                timeLimitSeconds,
+                                binaryName
+                        ))
         );
     }
 
@@ -198,7 +215,18 @@ public class JudgeServiceImpl implements JudgeService {
             return new ProcessResult(-1, safeJoin(stdoutFuture), safeJoin(stderrFuture), true);
         }
 
-        return new ProcessResult(process.exitValue(), safeJoin(stdoutFuture), safeJoin(stderrFuture), false);
+        int exitCode = process.exitValue();
+        return new ProcessResult(exitCode, safeJoin(stdoutFuture), safeJoin(stderrFuture),
+                isTimeoutExit(command, exitCode));
+    }
+
+    private boolean isTimeoutExit(List<String> command, int exitCode) {
+        return exitCode == 124
+                && command != null
+                && command.size() >= 3
+                && "bash".equals(command.get(0))
+                && "-c".equals(command.get(1))
+                && command.get(2).contains("timeout ");
     }
 
     private CompletableFuture<String> readStreamAsync(InputStream inputStream) {
