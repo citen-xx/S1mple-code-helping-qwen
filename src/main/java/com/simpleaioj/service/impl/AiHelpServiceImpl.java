@@ -10,6 +10,8 @@ import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.model.StreamingResponseHandler;
 import dev.langchain4j.model.dashscope.QwenStreamingChatModel;
 import dev.langchain4j.model.output.Response;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -19,10 +21,13 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 @Service
 public class AiHelpServiceImpl implements AiHelpService {
 
+    private static final Logger log = LoggerFactory.getLogger(AiHelpServiceImpl.class);
     private static final long SSE_TIMEOUT_MS = 60000L;
     private static final int MAX_PROMPT_CHARS = 8000;
     private static final int MAX_QUESTION_TITLE_CHARS = 200;
@@ -74,50 +79,70 @@ public class AiHelpServiceImpl implements AiHelpService {
     @Override
     public SseEmitter help(AiHelpRequest request) {
         SseEmitter emitter = new SseEmitter(SSE_TIMEOUT_MS);
+        String requestId = UUID.randomUUID().toString();
+        AtomicBoolean streamClosed = new AtomicBoolean(false);
 
         if (!isValidRequest(request)) {
-            try {
-                sendSseEvent(emitter, "error",
-                        "缺少必要参数：wrongCode 必须提供，judgeMessage、actualOutput、errorOutput 至少提供一个");
-            } catch (IOException ignored) {
-            }
+            log.warn("AI help request rejected, requestId={}, reason=missing_required_fields", requestId);
+            safeSend(emitter, streamClosed, "error",
+                    "缺少必要参数：wrongCode 必须提供，judgeMessage、actualOutput、errorOutput 至少提供一个", requestId);
             emitter.complete();
             return emitter;
         }
-        String userPrompt = buildPrompt(request);
+        String userPrompt = buildPrompt(request, requestId);
         List<ChatMessage> messages = List.of(
                 SystemMessage.from(SYSTEM_PROMPT),
                 UserMessage.from(userPrompt)
         );
 
-        emitter.onTimeout(emitter::complete);
+        emitter.onCompletion(() -> {
+            streamClosed.set(true);
+            log.info("AI SSE completed, requestId={}", requestId);
+        });
+        emitter.onTimeout(() -> {
+            if (streamClosed.compareAndSet(false, true)) {
+                log.warn("AI SSE timed out, requestId={}", requestId);
+                try {
+                    sendSseEvent(emitter, "error", "AI 分析超时，请稍后重试");
+                } catch (IOException | IllegalStateException e) {
+                    log.warn("SSE timeout notification failed, requestId={}", requestId);
+                }
+            }
+            emitter.complete();
+        });
+        emitter.onError(error -> {
+            streamClosed.set(true);
+            log.warn("AI SSE emitter error, requestId={}, message={}",
+                    requestId, error == null ? "unknown" : error.getMessage());
+        });
 
         streamingModel.generate(messages, new StreamingResponseHandler<AiMessage>() {
             @Override
             public void onNext(String token) {
-                try {
-                    sendSseEvent(emitter, "message", token);
-                } catch (IOException e) {
-                    emitter.completeWithError(e);
-                }
+                safeSend(emitter, streamClosed, "message", token, requestId);
             }
 
             @Override
             public void onComplete(Response<AiMessage> response) {
-                try {
-                    sendSseEvent(emitter, "done", "[DONE]");
-                } catch (IOException ignored) {
+                if (streamClosed.get()) {
+                    return;
                 }
+                log.info("AI model stream complete, requestId={}", requestId);
+                safeSend(emitter, streamClosed, "done", "[DONE]", requestId);
+                streamClosed.set(true);
                 emitter.complete();
             }
 
             @Override
             public void onError(Throwable error) {
-                try {
-                    sendSseEvent(emitter, "error", "AI 分析暂时失败，请稍后重试或检查模型配置");
-                } catch (IOException ignored) {
+                if (streamClosed.get()) {
+                    return;
                 }
-                emitter.completeWithError(error);
+                log.error("AI help stream failed, requestId={}, message={}",
+                        requestId, error == null ? "unknown" : error.getMessage(), error);
+                safeSend(emitter, streamClosed, "error", "AI 分析暂时失败，请稍后重试或检查模型配置", requestId);
+                streamClosed.set(true);
+                emitter.complete();
             }
         });
 
@@ -128,7 +153,21 @@ public class AiHelpServiceImpl implements AiHelpService {
         emitter.send(SseEmitter.event().name(eventName).data(data == null ? "" : data));
     }
 
-    private String buildPrompt(AiHelpRequest request) {
+    private void safeSend(SseEmitter emitter, AtomicBoolean streamClosed,
+                          String eventName, String data, String requestId) {
+        if (streamClosed.get()) {
+            return;
+        }
+        try {
+            sendSseEvent(emitter, eventName, data);
+        } catch (IOException | IllegalStateException e) {
+            streamClosed.set(true);
+            log.warn("SSE send failed, requestId={}, event={}", requestId, eventName);
+            emitter.complete();
+        }
+    }
+
+    private String buildPrompt(AiHelpRequest request, String requestId) {
         PromptTruncation truncation = new PromptTruncation();
         String judgeStatus = truncateField(request.getJudgeStatus(), MAX_JUDGE_STATUS_CHARS, false,
                 "judgeStatus", truncation);
@@ -146,6 +185,12 @@ public class AiHelpServiceImpl implements AiHelpService {
         if (prompt.length() > MAX_PROMPT_CHARS) {
             truncation.markField("promptBudget");
             prompt = prompt.substring(0, MAX_PROMPT_CHARS - TRUNCATED_MARK.length()) + TRUNCATED_MARK;
+        }
+        if (truncation.wasTruncated()) {
+            log.info("AI help prompt truncated, requestId={}, finalChars={}, fields={}",
+                    requestId, prompt.length(), truncation.summary());
+        } else {
+            log.info("AI help prompt built, requestId={}, finalChars={}", requestId, prompt.length());
         }
         return prompt;
     }
@@ -750,6 +795,14 @@ public class AiHelpServiceImpl implements AiHelpService {
                 fields.append(", ");
             }
             fields.append(fieldName);
+        }
+
+        boolean wasTruncated() {
+            return fields.length() > 0;
+        }
+
+        String summary() {
+            return fields.length() == 0 ? "none" : fields.toString();
         }
     }
 }

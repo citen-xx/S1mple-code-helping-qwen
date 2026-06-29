@@ -55,7 +55,10 @@ public class JudgeServiceImpl implements JudgeService {
             String language = normalizeLanguage(request.getLanguage());
             workDir = Files.createTempDirectory("simple-ai-oj-judge-");
 
-            SourceConfig sourceConfig = buildSourceConfig(language, workDir);
+            Question question = detailVO.getQuestion();
+            int memoryLimitMb = (question != null && question.getMemoryLimit() != null && question.getMemoryLimit() > 0)
+                    ? question.getMemoryLimit() : 128;
+            SourceConfig sourceConfig = buildSourceConfig(language, workDir, memoryLimitMb);
             Files.writeString(sourceConfig.getSourcePath(), request.getCode(), StandardCharsets.UTF_8);
 
             ProcessResult compileResult = executeCommand(sourceConfig.getCompileCommand(), workDir, null, COMPILE_TIMEOUT_MS, true);
@@ -66,7 +69,7 @@ public class JudgeServiceImpl implements JudgeService {
                 return buildResponse(JudgeStatus.COMPILE_ERROR, compileResult.getStdout(), "Compile failed");
             }
 
-            return runTestCases(sourceConfig, detailVO.getQuestion(), detailVO.getTestCases(), workDir);
+            return runTestCases(sourceConfig, question, detailVO.getTestCases(), workDir);
         } catch (IllegalArgumentException e) {
             return buildResponse(JudgeStatus.SYSTEM_ERROR, "", e.getMessage());
         } catch (IOException e) {
@@ -128,16 +131,20 @@ public class JudgeServiceImpl implements JudgeService {
         throw new IllegalArgumentException("Only java and cpp are supported");
     }
 
-    private SourceConfig buildSourceConfig(String language, Path workDir) {
+    private SourceConfig buildSourceConfig(String language, Path workDir, int memoryLimitMb) {
         if (LANGUAGE_JAVA.equals(language)) {
             Path sourcePath = workDir.resolve("Main.java");
             return new SourceConfig(
                     sourcePath,
                     List.of("javac", "-encoding", "UTF-8", "Main.java"),
-                    List.of("java", "-Dfile.encoding=UTF-8", "-cp", ".", "Main")
+                    List.of("java", "-Dfile.encoding=UTF-8", "-Xmx" + memoryLimitMb + "m", "-cp", ".", "Main")
             );
         }
 
+        // C++ 进程内存限制：跨平台方案较复杂。
+        // Linux 下可用 bash -c 'ulimit -v ... && ./main' 包装运行命令；
+        // Windows 下需借助 Job Objects API。
+        // 当前版本暂不落地 C++ 侧内存限制，仅 Java 侧通过 -Xmx 生效。
         String binaryName = isWindows() ? "main.exe" : "main";
         Path sourcePath = workDir.resolve("main.cpp");
         String runCommand = isWindows() ? binaryName : "./" + binaryName;
