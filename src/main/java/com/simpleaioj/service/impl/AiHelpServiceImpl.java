@@ -76,11 +76,14 @@ public class AiHelpServiceImpl implements AiHelpService {
         SseEmitter emitter = new SseEmitter(SSE_TIMEOUT_MS);
 
         if (!isValidRequest(request)) {
-            emitter.completeWithError(new IllegalArgumentException(
-                    "wrongCode 必须提供，judgeMessage、actualOutput、errorOutput 至少提供一个"));
+            try {
+                sendSseEvent(emitter, "error",
+                        "缺少必要参数：wrongCode 必须提供，judgeMessage、actualOutput、errorOutput 至少提供一个");
+            } catch (IOException ignored) {
+            }
+            emitter.complete();
             return emitter;
         }
-
         String userPrompt = buildPrompt(request);
         List<ChatMessage> messages = List.of(
                 SystemMessage.from(SYSTEM_PROMPT),
@@ -93,7 +96,7 @@ public class AiHelpServiceImpl implements AiHelpService {
             @Override
             public void onNext(String token) {
                 try {
-                    emitter.send(token);
+                    sendSseEvent(emitter, "message", token);
                 } catch (IOException e) {
                     emitter.completeWithError(e);
                 }
@@ -101,16 +104,28 @@ public class AiHelpServiceImpl implements AiHelpService {
 
             @Override
             public void onComplete(Response<AiMessage> response) {
+                try {
+                    sendSseEvent(emitter, "done", "[DONE]");
+                } catch (IOException ignored) {
+                }
                 emitter.complete();
             }
 
             @Override
             public void onError(Throwable error) {
+                try {
+                    sendSseEvent(emitter, "error", "AI 分析暂时失败，请稍后重试或检查模型配置");
+                } catch (IOException ignored) {
+                }
                 emitter.completeWithError(error);
             }
         });
 
         return emitter;
+    }
+
+    private void sendSseEvent(SseEmitter emitter, String eventName, String data) throws IOException {
+        emitter.send(SseEmitter.event().name(eventName).data(data == null ? "" : data));
     }
 
     private String buildPrompt(AiHelpRequest request) {
