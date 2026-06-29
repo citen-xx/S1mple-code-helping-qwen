@@ -10,6 +10,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.concurrent.CompletableFuture;
+
 @RestController
 @RequestMapping("/api/judge")
 public class JudgeController {
@@ -21,16 +23,17 @@ public class JudgeController {
     }
 
     @PostMapping
-    public Result<JudgeResponse> judge(@RequestBody JudgeRequest request) {
+    public CompletableFuture<Result<JudgeResponse>> judge(@RequestBody JudgeRequest request) {
         if (request == null || request.getQuestionId() == null) {
-            return Result.fail("questionId is required");
+            return CompletableFuture.completedFuture(Result.fail("questionId is required"));
         }
         if (!StringUtils.hasText(request.getLanguage())) {
-            return Result.fail("language is required");
+            return CompletableFuture.completedFuture(Result.fail("language is required"));
         }
         if (!StringUtils.hasText(request.getCode())) {
-            return Result.fail("code is required");
+            return CompletableFuture.completedFuture(Result.fail("code is required"));
         }
-        return Result.success(judgeService.judge(request));
+        return judgeService.judge(request)
+                .thenApply(Result::success);
     }
 }

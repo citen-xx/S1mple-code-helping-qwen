@@ -8,6 +8,8 @@ import com.simpleaioj.service.JudgeService;
 import com.simpleaioj.service.QuestionService;
 import com.simpleaioj.vo.JudgeResponse;
 import com.simpleaioj.vo.QuestionDetailVO;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.core.task.TaskExecutor;
 import org.springframework.stereotype.Service;
 import org.springframework.util.CollectionUtils;
 
@@ -24,6 +26,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 
 @Service
@@ -35,51 +38,64 @@ public class JudgeServiceImpl implements JudgeService {
     private static final String LANGUAGE_CPP = "cpp";
 
     private final QuestionService questionService;
+    private final TaskExecutor judgeExecutor;
+    private final Semaphore judgeSemaphore = new Semaphore(10);
 
-    public JudgeServiceImpl(QuestionService questionService) {
+    public JudgeServiceImpl(QuestionService questionService,
+                            @Qualifier("judgeExecutor") TaskExecutor judgeExecutor) {
         this.questionService = questionService;
+        this.judgeExecutor = judgeExecutor;
     }
 
     @Override
-    public JudgeResponse judge(JudgeRequest request) {
-        QuestionDetailVO detailVO = questionService.getQuestionDetail(request.getQuestionId());
-        if (detailVO == null || detailVO.getQuestion() == null) {
-            return buildResponse(JudgeStatus.SYSTEM_ERROR, "", "Question not found");
-        }
-        if (CollectionUtils.isEmpty(detailVO.getTestCases())) {
-            return buildResponse(JudgeStatus.SYSTEM_ERROR, "", "No test cases found");
-        }
+    public CompletableFuture<JudgeResponse> judge(JudgeRequest request) {
+        return CompletableFuture.supplyAsync(() -> {
+            boolean acquired = false;
+            Path workDir = null;
+            try {
+                judgeSemaphore.acquire();
+                acquired = true;
 
-        Path workDir = null;
-        try {
-            String language = normalizeLanguage(request.getLanguage());
-            workDir = Files.createTempDirectory("simple-ai-oj-judge-");
+                QuestionDetailVO detailVO = questionService.getQuestionDetail(request.getQuestionId());
+                if (detailVO == null || detailVO.getQuestion() == null) {
+                    return buildResponse(JudgeStatus.SYSTEM_ERROR, "", "Question not found");
+                }
+                if (CollectionUtils.isEmpty(detailVO.getTestCases())) {
+                    return buildResponse(JudgeStatus.SYSTEM_ERROR, "", "No test cases found");
+                }
 
-            Question question = detailVO.getQuestion();
-            int memoryLimitMb = (question != null && question.getMemoryLimit() != null && question.getMemoryLimit() > 0)
-                    ? question.getMemoryLimit() : 128;
-            SourceConfig sourceConfig = buildSourceConfig(language, workDir, memoryLimitMb);
-            Files.writeString(sourceConfig.getSourcePath(), request.getCode(), StandardCharsets.UTF_8);
+                String language = normalizeLanguage(request.getLanguage());
+                workDir = Files.createTempDirectory("simple-ai-oj-judge-");
 
-            ProcessResult compileResult = executeCommand(sourceConfig.getCompileCommand(), workDir, null, COMPILE_TIMEOUT_MS, true);
-            if (compileResult.isTimedOut()) {
-                return buildResponse(JudgeStatus.COMPILE_ERROR, compileResult.getStdout(), "Compile timeout");
+                Question question = detailVO.getQuestion();
+                int memoryLimitMb = (question != null && question.getMemoryLimit() != null && question.getMemoryLimit() > 0)
+                        ? question.getMemoryLimit() : 128;
+                SourceConfig sourceConfig = buildSourceConfig(language, workDir, memoryLimitMb);
+                Files.writeString(sourceConfig.getSourcePath(), request.getCode(), StandardCharsets.UTF_8);
+
+                ProcessResult compileResult = executeCommand(sourceConfig.getCompileCommand(), workDir, null, COMPILE_TIMEOUT_MS, true);
+                if (compileResult.isTimedOut()) {
+                    return buildResponse(JudgeStatus.COMPILE_ERROR, compileResult.getStdout(), "Compile timeout");
+                }
+                if (compileResult.getExitCode() != 0) {
+                    return buildResponse(JudgeStatus.COMPILE_ERROR, compileResult.getStdout(), "Compile failed");
+                }
+
+                return runTestCases(sourceConfig, question, detailVO.getTestCases(), workDir);
+            } catch (IllegalArgumentException e) {
+                return buildResponse(JudgeStatus.SYSTEM_ERROR, "", e.getMessage());
+            } catch (IOException e) {
+                return buildResponse(JudgeStatus.SYSTEM_ERROR, "", "Failed to create temp files or execute command: " + e.getMessage());
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return buildResponse(JudgeStatus.SYSTEM_ERROR, "", "Judge thread interrupted");
+            } finally {
+                if (acquired) {
+                    judgeSemaphore.release();
+                }
+                deleteDirectoryQuietly(workDir);
             }
-            if (compileResult.getExitCode() != 0) {
-                return buildResponse(JudgeStatus.COMPILE_ERROR, compileResult.getStdout(), "Compile failed");
-            }
-
-            return runTestCases(sourceConfig, question, detailVO.getTestCases(), workDir);
-        } catch (IllegalArgumentException e) {
-            return buildResponse(JudgeStatus.SYSTEM_ERROR, "", e.getMessage());
-        } catch (IOException e) {
-            return buildResponse(JudgeStatus.SYSTEM_ERROR, "", "Failed to create temp files or execute command: " + e.getMessage());
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            return buildResponse(JudgeStatus.SYSTEM_ERROR, "", "Judge thread interrupted");
-        } finally {
-            deleteDirectoryQuietly(workDir);
-        }
+        }, judgeExecutor);
     }
 
     private JudgeResponse runTestCases(SourceConfig sourceConfig, Question question, List<TestCase> testCases, Path workDir)
