@@ -19,8 +19,11 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -44,6 +47,11 @@ public class AiHelpServiceImpl implements AiHelpService {
     private static final int JAVA_COMPILE_ERROR_OUTPUT_CHARS = 3000;
     private static final int CPP_COMPILE_ERROR_OUTPUT_CHARS = 4000;
     private static final int CPP_RUNTIME_ERROR_OUTPUT_CHARS = 2500;
+    private static final int MAX_STACK_LINES = 8;
+    private static final int CONTEXT_LINES_BEFORE = 15;
+    private static final int CONTEXT_LINES_AFTER = 10;
+    private static final int MAX_HEAD_LINES = 15;
+    private static final int MIN_LINES_FOR_TRUNCATION = 50;
     private static final String TRUNCATED_MARK = "\n[内容过长，已截断]";
     private static final String SYSTEM_PROMPT = """
             你是一个算法教练，请看这道题和用户的代码，指出哪里写错了，给出思路，
@@ -197,6 +205,7 @@ public class AiHelpServiceImpl implements AiHelpService {
 
     private String buildCompileErrorPrompt(AiHelpRequest request, PromptTruncation truncation, String judgeStatus) {
         String rawLanguage = request.getLanguage();
+        String diagnosticText = buildDiagnosticText(request);
         String questionTitle = truncateField(request.getQuestionTitle(), MAX_QUESTION_TITLE_CHARS, false,
                 "questionTitle", truncation);
         String questionContent = truncateField(request.getQuestionContent(), MAX_QUESTION_CONTENT_CHARS, false,
@@ -206,8 +215,11 @@ public class AiHelpServiceImpl implements AiHelpService {
         String processedErrorOutput = preprocessCompilerError(resolveCompileErrorOutput(request), rawLanguage);
         String errorOutput = truncateField(processedErrorOutput,
                 resolveErrorOutputChars(rawLanguage, request.getJudgeStatus()), false, "errorOutput", truncation);
-        String wrongCode = truncateField(request.getWrongCode(), MAX_WRONG_CODE_CHARS, true,
-                "wrongCode", truncation);
+        String wrongCode = truncateCodeByErrorLine(request.getWrongCode(), diagnosticText);
+        if (wrongCode != null
+                && (wrongCode.length() > MAX_WRONG_CODE_CHARS || !wrongCode.equals(request.getWrongCode()))) {
+            truncation.markField("wrongCode");
+        }
 
         StringBuilder prompt = new StringBuilder();
         appendSection(prompt, "场景说明", "当前提交在编译阶段失败，请优先分析语法、类型、导入、类名或方法签名等编译期问题。");
@@ -228,6 +240,7 @@ public class AiHelpServiceImpl implements AiHelpService {
 
     private String buildRuntimeErrorPrompt(AiHelpRequest request, PromptTruncation truncation, String judgeStatus) {
         String rawLanguage = request.getLanguage();
+        String diagnosticText = buildDiagnosticText(request);
         String questionTitle = truncateField(request.getQuestionTitle(), MAX_QUESTION_TITLE_CHARS, false,
                 "questionTitle", truncation);
         String questionContent = truncateField(request.getQuestionContent(), MAX_QUESTION_CONTENT_CHARS, false,
@@ -240,8 +253,11 @@ public class AiHelpServiceImpl implements AiHelpService {
                 resolveErrorOutputChars(rawLanguage, request.getJudgeStatus()), false, "errorOutput", truncation);
         String failedInput = truncateField(request.getFailedInput(), MAX_FAILED_INPUT_CHARS, false,
                 "failedInput", truncation);
-        String wrongCode = truncateField(request.getWrongCode(), MAX_WRONG_CODE_CHARS, true,
-                "wrongCode", truncation);
+        String wrongCode = truncateCodeByErrorLine(request.getWrongCode(), diagnosticText);
+        if (wrongCode != null
+                && (wrongCode.length() > MAX_WRONG_CODE_CHARS || !wrongCode.equals(request.getWrongCode()))) {
+            truncation.markField("wrongCode");
+        }
 
         StringBuilder prompt = new StringBuilder();
         appendSection(prompt, "场景说明", "当前提交已通过编译，但在运行时失败，请优先分析异常触发条件、边界情况和崩溃原因。");
@@ -264,6 +280,7 @@ public class AiHelpServiceImpl implements AiHelpService {
     }
 
     private String buildWrongAnswerPrompt(AiHelpRequest request, PromptTruncation truncation, String judgeStatus) {
+        String diagnosticText = buildDiagnosticText(request);
         String questionTitle = truncateField(request.getQuestionTitle(), MAX_QUESTION_TITLE_CHARS, false,
                 "questionTitle", truncation);
         String questionContent = truncateField(request.getQuestionContent(), MAX_QUESTION_CONTENT_CHARS, false,
@@ -280,8 +297,11 @@ public class AiHelpServiceImpl implements AiHelpService {
                 "expectedOutput", truncation);
         String failedInput = truncateField(request.getFailedInput(), MAX_FAILED_INPUT_CHARS, false,
                 "failedInput", truncation);
-        String wrongCode = truncateField(request.getWrongCode(), MAX_WRONG_CODE_CHARS, true,
-                "wrongCode", truncation);
+        String wrongCode = truncateCodeByErrorLine(request.getWrongCode(), diagnosticText);
+        if (wrongCode != null
+                && (wrongCode.length() > MAX_WRONG_CODE_CHARS || !wrongCode.equals(request.getWrongCode()))) {
+            truncation.markField("wrongCode");
+        }
 
         StringBuilder prompt = new StringBuilder();
         appendSection(prompt, "场景说明", "当前提交能够运行，但输出结果与预期不一致，请优先分析逻辑错误、边界条件、状态更新或题意理解偏差。");
@@ -306,6 +326,7 @@ public class AiHelpServiceImpl implements AiHelpService {
 
     private String buildGenericPrompt(AiHelpRequest request, PromptTruncation truncation, String judgeStatus) {
         String rawLanguage = request.getLanguage();
+        String diagnosticText = buildDiagnosticText(request);
         String questionTitle = truncateField(request.getQuestionTitle(), MAX_QUESTION_TITLE_CHARS, false,
                 "questionTitle", truncation);
         String questionContent = truncateField(request.getQuestionContent(), MAX_QUESTION_CONTENT_CHARS, false,
@@ -324,8 +345,11 @@ public class AiHelpServiceImpl implements AiHelpService {
                 "expectedOutput", truncation);
         String failedInput = truncateField(request.getFailedInput(), MAX_FAILED_INPUT_CHARS, false,
                 "failedInput", truncation);
-        String wrongCode = truncateField(request.getWrongCode(), MAX_WRONG_CODE_CHARS, true,
-                "wrongCode", truncation);
+        String wrongCode = truncateCodeByErrorLine(request.getWrongCode(), diagnosticText);
+        if (wrongCode != null
+                && (wrongCode.length() > MAX_WRONG_CODE_CHARS || !wrongCode.equals(request.getWrongCode()))) {
+            truncation.markField("wrongCode");
+        }
 
         return """
                 【题目标题】
@@ -406,6 +430,125 @@ public class AiHelpServiceImpl implements AiHelpService {
     // 这里优先保留首个 error: 周围的函数上下文、源码片段，以及距离最近的少量 note。
     // include 链只展示用户入口和最终落点，中间折叠成摘要，纯系统头文件实例化链压成一行说明。
     // 所有 error: 行都会保留，但默认丢掉只指向系统头文件内部的噪音 note。
+    private List<Integer> extractErrorLineNumbers(String errorOutput) {
+        if (!StringUtils.hasText(errorOutput)) {
+            return Collections.emptyList();
+        }
+
+        java.util.regex.Pattern pattern = java.util.regex.Pattern.compile(
+                "\\b(Main\\.java|main\\.cpp):(\\d+)(?:[:)]|\\b)"
+        );
+        java.util.regex.Matcher matcher = pattern.matcher(errorOutput);
+
+        Map<Integer, Integer> lineCounts = new LinkedHashMap<>();
+        while (matcher.find()) {
+            int lineNum;
+            try {
+                lineNum = Integer.parseInt(matcher.group(2));
+            } catch (NumberFormatException e) {
+                continue;
+            }
+            if (lineNum <= 0) {
+                continue;
+            }
+            lineCounts.merge(lineNum, 1, Integer::sum);
+        }
+
+        if (lineCounts.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        List<Map.Entry<Integer, Integer>> rankedLines = new ArrayList<>(lineCounts.entrySet());
+        rankedLines.sort((left, right) -> Integer.compare(right.getValue(), left.getValue()));
+
+        List<Integer> result = new ArrayList<>(rankedLines.size());
+        for (Map.Entry<Integer, Integer> entry : rankedLines) {
+            result.add(entry.getKey());
+        }
+        return result;
+    }
+
+    private String buildDiagnosticText(AiHelpRequest request) {
+        StringBuilder diag = new StringBuilder();
+        if (StringUtils.hasText(request.getErrorOutput())) {
+            diag.append(request.getErrorOutput());
+        }
+        if (StringUtils.hasText(request.getJudgeMessage())) {
+            if (diag.length() > 0) {
+                diag.append('\n');
+            }
+            diag.append(request.getJudgeMessage());
+        }
+        return diag.toString();
+    }
+
+    private String truncateCodeByErrorLine(String code, String diagnosticText) {
+        if (!StringUtils.hasText(code)) {
+            return code;
+        }
+
+        String[] lines = code.split("\\R", -1);
+        int totalLines = lines.length;
+        while (totalLines > 0 && lines[totalLines - 1].isEmpty()) {
+            totalLines--;
+        }
+        if (totalLines == 0) {
+            return code;
+        }
+
+        if (totalLines <= MIN_LINES_FOR_TRUNCATION) {
+            return code;
+        }
+
+        List<Integer> errorLines = extractErrorLineNumbers(diagnosticText);
+        if (errorLines.isEmpty()) {
+            return truncateField(code, MAX_WRONG_CODE_CHARS, true, "wrongCode", new PromptTruncation());
+        }
+
+        int centerLine = Math.min(Math.max(errorLines.get(0), 1), totalLines);
+        int windowStart = Math.max(1, centerLine - CONTEXT_LINES_BEFORE);
+        int windowEnd = Math.min(totalLines, centerLine + CONTEXT_LINES_AFTER);
+
+        StringBuilder result = new StringBuilder();
+
+        int headEnd = Math.min(MAX_HEAD_LINES, windowStart - 1);
+        for (int i = 0; i < headEnd; i++) {
+            result.append(lines[i]).append('\n');
+        }
+        if (headEnd < windowStart - 1) {
+            result.append("// ... [省略第 ").append(headEnd + 1)
+                    .append(" 行至第 ").append(windowStart - 1)
+                    .append(" 行，共 ").append(windowStart - headEnd - 1).append(" 行] ...\n");
+        }
+
+        for (int i = windowStart - 1; i < windowEnd; i++) {
+            int lineNum = i + 1;
+            if (lineNum == centerLine) {
+                result.append("// >>> 编译/运行错误发生在下面这一行 >>>\n");
+                result.append(lines[i]).append('\n');
+                result.append("// <<< 错误行 <<<\n");
+            } else if (errorLines.contains(lineNum)) {
+                result.append("// >>> 此处也有报错 >>>\n");
+                result.append(lines[i]).append('\n');
+                result.append("// <<< 报错行 <<<\n");
+            } else {
+                result.append(lines[i]).append('\n');
+            }
+        }
+
+        if (windowEnd < totalLines) {
+            result.append("// ... [省略第 ").append(windowEnd + 1)
+                    .append(" 行至第 ").append(totalLines)
+                    .append(" 行，共 ").append(totalLines - windowEnd).append(" 行] ...\n");
+        }
+
+        String finalResult = result.toString();
+        if (finalResult.length() > MAX_WRONG_CODE_CHARS) {
+            return truncateField(finalResult, MAX_WRONG_CODE_CHARS, false, "wrongCode", new PromptTruncation());
+        }
+        return finalResult;
+    }
+
     private String preprocessCompilerError(String rawError, String language) {
         if (!isCppLanguage(language) || !StringUtils.hasText(rawError)) {
             return rawError;
@@ -496,6 +639,70 @@ public class AiHelpServiceImpl implements AiHelpService {
         return result.isEmpty() ? rawError : String.join("\n", result);
     }
 
+    private String truncateStackTrace(String rawError) {
+        if (!StringUtils.hasText(rawError)) {
+            return rawError;
+        }
+
+        String[] lines = rawError.split("\\R", -1);
+        List<String> result = new ArrayList<>();
+        int keptLines = 0;
+        int totalAtLines = 0;
+        boolean headerKept = false;
+
+        for (String line : lines) {
+            String trimmed = line.trim();
+            if (!StringUtils.hasText(trimmed)) {
+                continue;
+            }
+
+            if (!headerKept
+                    && !trimmed.startsWith("at ")
+                    && !trimmed.startsWith("Caused by:")
+                    && !trimmed.startsWith("... ")) {
+                result.add(line);
+                headerKept = true;
+                continue;
+            }
+
+            if (trimmed.startsWith("Caused by:")) {
+                result.add(line);
+                headerKept = true;
+                continue;
+            }
+
+            if (trimmed.startsWith("... ")) {
+                result.add(line);
+                continue;
+            }
+
+            if (trimmed.startsWith("at ")) {
+                totalAtLines++;
+                if (keptLines < MAX_STACK_LINES) {
+                    result.add(line);
+                    keptLines++;
+                }
+            }
+        }
+
+        if (totalAtLines > MAX_STACK_LINES) {
+            result.add("\t... [后续 " + (totalAtLines - MAX_STACK_LINES) + " 行堆栈已省略] ...");
+        }
+
+        return result.isEmpty() ? rawError : String.join("\n", result);
+    }
+
+    private String preprocessRuntimeError(String rawError, String language) {
+        if (!StringUtils.hasText(rawError)) {
+            return rawError;
+        }
+        String normalizedLanguage = normalizeLanguageKey(language);
+        if ("java".equals(normalizedLanguage)) {
+            return truncateStackTrace(rawError);
+        }
+        return rawError;
+    }
+
     private String resolveCompileErrorOutput(AiHelpRequest request) {
         String errorOutput = sanitizeCompositeErrorOutput(
                 request.getErrorOutput(), request.getJudgeStatus(), request.getJudgeMessage());
@@ -513,18 +720,18 @@ public class AiHelpServiceImpl implements AiHelpService {
         String errorOutput = sanitizeCompositeErrorOutput(
                 request.getErrorOutput(), request.getJudgeStatus(), request.getJudgeMessage());
         if (StringUtils.hasText(errorOutput)) {
-            return errorOutput;
+            return preprocessRuntimeError(errorOutput, request.getLanguage());
         }
         String judgeMessage = normalizeDiagnosticValue(request.getJudgeMessage());
         if (StringUtils.hasText(judgeMessage)) {
-            return judgeMessage;
+            return preprocessRuntimeError(judgeMessage, request.getLanguage());
         }
         return normalizeDiagnosticValue(request.getActualOutput());
     }
 
     private String resolveGenericErrorOutput(AiHelpRequest request) {
         if (StringUtils.hasText(request.getErrorOutput())) {
-            return request.getErrorOutput();
+            return preprocessRuntimeError(request.getErrorOutput(), request.getLanguage());
         }
         StringBuilder builder = new StringBuilder();
         if (StringUtils.hasText(request.getJudgeStatus())) {
