@@ -11,8 +11,10 @@ spring:
     password: ${SPRING_DATASOURCE_PASSWORD:123456}
     driver-class-name: com.mysql.cj.jdbc.Driver
 
+
+
 dashscope:
-  api-key: sk-93d2acfc2c0943aba471418e24a64649
-  model: ${DASHSCOPE_MODEL:qwen-plus}
+  api-key: sk-ws-H.RYPPMLE.SSWp.MEYCIQCxitCWD9fcOtHwM3idYJT-iYb7eiZLOyC26A1T8gm4jQIhAMJqxtxpnYLQEg2Sl_j4Rp6lkkVs8n0d5H6qHIGtw5Q7
+  model: ${DASHSCOPE_MODEL:qwen3.7-plus}
   enable-search: ${DASHSCOPE_ENABLE_SEARCH:true}
   base-url: ${DASHSCOPE_BASE_URL:}
