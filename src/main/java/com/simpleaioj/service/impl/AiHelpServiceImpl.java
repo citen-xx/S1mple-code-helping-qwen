@@ -69,7 +69,7 @@ public class AiHelpServiceImpl implements AiHelpService {
 
     public AiHelpServiceImpl(
             @Value("${dashscope.api-key}") String apiKey,
-            @Value("${dashscope.model:qwen-plus}") String modelName,
+            @Value("${dashscope.model:qwen3.7-plus}") String modelName,
             @Value("${dashscope.enable-search:true}") boolean enableSearch,
             @Value("${dashscope.base-url:}") String baseUrl) {
         QwenStreamingChatModel.QwenStreamingChatModelBuilder builder = QwenStreamingChatModel.builder()

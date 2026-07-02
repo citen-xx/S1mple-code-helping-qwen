@@ -15,6 +15,6 @@ spring:
 
 dashscope:
   api-key: sk-ws-H.RYPPMLE.SSWp.MEYCIQCxitCWD9fcOtHwM3idYJT-iYb7eiZLOyC26A1T8gm4jQIhAMJqxtxpnYLQEg2Sl_j4Rp6lkkVs8n0d5H6qHIGtw5Q7
-  model: ${DASHSCOPE_MODEL:qwen3.7-plus}
-  enable-search: ${DASHSCOPE_ENABLE_SEARCH:true}
-  base-url: ${DASHSCOPE_BASE_URL:}
+  model: qwen3.7-plus
+  enable-search: true
+  base-url:

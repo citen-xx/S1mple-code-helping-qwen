@@ -15,7 +15,7 @@
 - 后端：`Spring Boot 3.3.5`
 - ORM：`MyBatis-Plus 3.5.7`
 - 数据库：`MySQL 8.0`
-- AI：`LangChain4j 0.36.2`、`DashScope / qwen-plus`
+- AI：`LangChain4j 0.36.2`、`DashScope / qwen3.7-plus`
 - 前端：`Vue 3`、`Vite 5`、`TailwindCSS`、`Monaco Editor`
 
 ## 目录结构
@@ -148,25 +148,16 @@ docker compose up -d --build
 
 ## AI 配置
 
-当前 AI 辅导默认使用：
+当前 AI 辅导直接读取后端配置文件中的固定值：
 
-- 模型：`qwen-plus`
+- 模型：`qwen3.7-plus`
 - 联网搜索：开启
 
-关键配置项：
+关键配置位置：
 
-- `dashscope.api-key`
-- `dashscope.model`
-- `dashscope.enable-search`
-- `dashscope.base-url`
+- `src/main/resources/application.yml`
 
-推荐通过环境变量覆盖：
-
-```bash
-DASHSCOPE_API_KEY=your-key
-DASHSCOPE_MODEL=qwen-plus
-DASHSCOPE_ENABLE_SEARCH=true
-```
+如果要修改 Qwen key 或模型，直接编辑 `dashscope` 配置即可，不再依赖 `.env` 或 Docker Compose 环境变量。
 
 ## Vercel 前端部署
 

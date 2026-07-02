@@ -8,7 +8,7 @@
 
 ## 2. Configure environment variables
 
-Copy `.env.example` to `.env` and fill in your actual values:
+Copy `.env.example` to `.env` only if you want to override the MySQL defaults:
 
 ```bash
 cp .env.example .env
@@ -17,7 +17,8 @@ cp .env.example .env
 Required:
 
 - `MYSQL_ROOT_PASSWORD`
-- `DASHSCOPE_API_KEY`
+
+Qwen config is read directly from `src/main/resources/application.yml`.
 
 ## 3. Start services
 
