@@ -15,6 +15,6 @@ spring:
 
 dashscope:
   api-key: sk-ws-H.RYPPMLE.SSWp.MEYCIQCxitCWD9fcOtHwM3idYJT-iYb7eiZLOyC26A1T8gm4jQIhAMJqxtxpnYLQEg2Sl_j4Rp6lkkVs8n0d5H6qHIGtw5Q7
-  model: qwen3.7-plus
+  model: qwen-plus
   enable-search: true
   base-url:
